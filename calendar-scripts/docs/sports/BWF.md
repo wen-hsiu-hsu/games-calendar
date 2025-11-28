@@ -307,7 +307,46 @@ node calendar-scripts/src/index.js bwf
 # BWF Adapter received data structure: results, remaining, completed
 # Processing BWF official API format with 12 months
 # Standardized XX tournaments from official API format
+#
+# Syncing 42 events for bwf...
+# Found 6 existing events in calendar
+# ✅ Created: PETRONAS Malaysia Open 2025
+# 🔄 Updated: SYED MODI India International 2025
+# ⏭️  Unchanged: YONEX-SUNRISE Guwahati Masters 2025
+# 🗑️  Deleted: Guwahati Masters 2025
+#
+# 📊 Sync Summary for bwf:
+#    Created: 38
+#    Updated: 2
+#    Unchanged: 2
+#    Deleted: 2
+#    Total processed: 42
 ```
+
+### 智慧同步機制
+
+每次執行時，系統會：
+
+1. **完整驗證所有欄位**
+   - 時間（dateStart, dateEnd）
+   - 名稱（name）
+   - 地點（location）
+   - 描述（description）
+   - 類別/等級（category, level）
+   - 獎金（prize）
+   - URL（url）
+
+2. **自動修正錯誤資料**
+   - 若事件的時間、地點等資訊有誤 → 自動更新為正確資料
+   - 若 API 移除了某個賽事 → 自動從日曆刪除
+
+3. **避免重複建立**
+   - 使用「名稱 + 開始日期 + 結束日期」作為唯一鍵值
+   - 相同的事件不會重複建立
+
+4. **效能最佳化**
+   - 資料完全相同的事件會跳過，不發送更新請求
+   - 使用 Map 資料結構加速查找
 
 ### GitHub Actions
 

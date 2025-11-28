@@ -243,7 +243,7 @@ async function clearExistingEvents(calendar, calendarId) {
 }
 
 /**
- * 創建賽事事件
+ * 創建或更新賽事事件（含完整驗證）
  * @param {google.calendar} calendar - Google Calendar API 實例
  * @param {string} calendarId - 日曆 ID
  * @param {Array} tournaments - 賽事數據數組
@@ -254,71 +254,167 @@ async function createEvents(calendar, calendarId, tournaments, sportId) {
     console.log(`No tournaments to add for ${sportId}`);
     return;
   }
-  
-  console.log(`Creating ${tournaments.length} events for ${sportId}...`);
-  
-  for (const tournament of tournaments) {
-    try {
-      // 檢查是否已存在相同名稱和日期範圍的事件
-      const existingEvents = await calendar.events.list({
-        calendarId,
-        timeMin: new Date(tournament.dateStart).toISOString(),
-        timeMax: new Date(tournament.dateEnd).toISOString(),
-        q: tournament.name,
-        singleEvents: true
-      });
 
-      // 如果沒有找到相同名稱和日期範圍的事件，則創建新事件
-      if (!existingEvents.data.items || existingEvents.data.items.length === 0) {
-        await calendar.events.insert({
-          calendarId,
-          requestBody: {
-            summary: tournament.name,
-            location: formatLocation(tournament.location),
-            description: tournament.description,
-            start: {
-              date: formatDate(tournament.dateStart),
-              timeZone: 'UTC'
-            },
-            end: {
-              date: formatDate(tournament.dateEnd, true),
-              timeZone: 'UTC'
-            },
-            transparency: 'transparent',
-            visibility: 'public',
-            source: {
-              title: `${getSourceName(sportId)} Calendar`,
-              url: tournament.url || ''
-            }
-          }
-        });
-        console.log(`Created event for tournament: ${tournament.name}`);
-      } else {
-        console.log(`Event already exists for tournament: ${tournament.name}`);
-      }
-    } catch (error) {
-      console.error(`Error processing event for tournament ${tournament.name}:`, error);
-      // 繼續處理其他賽事，不中斷整個流程
+  console.log(`Syncing ${tournaments.length} events for ${sportId}...`);
+
+  // 獲取日曆上所有現有事件
+  // 注意：不使用 timeMin 限制，因為我們需要找到所有事件（包括過去的）來避免重複
+  const existingEventsResponse = await calendar.events.list({
+    calendarId,
+    maxResults: 2500,
+    singleEvents: true
+  });
+
+  const existingEvents = existingEventsResponse.data.items || [];
+  console.log(`Found ${existingEvents.length} existing events in calendar`);
+
+  // 建立事件映射表（用於快速查找）
+  // 使用「名稱 + 開始日期」作為唯一鍵值（因為同名賽事不會在同一天開始）
+  const existingEventsMap = new Map();
+  for (const event of existingEvents) {
+    const startDate = event.start.date || event.start.dateTime?.split('T')[0] || '';
+    const key = `${event.summary}|${startDate}`;
+
+    // 如果已經存在相同 key 的事件，保留第一個（這不應該發生，但防禦性處理）
+    if (!existingEventsMap.has(key)) {
+      existingEventsMap.set(key, event);
+    } else {
+      console.warn(`⚠️  發現重複的 key: ${key}`);
     }
   }
-  
-  console.log(`Finished processing ${tournaments.length} events for ${sportId}`);
+
+  // 追蹤處理過的事件
+  const processedEventKeys = new Set();
+  let createdCount = 0;
+  let updatedCount = 0;
+  let unchangedCount = 0;
+
+  // 處理每個賽事
+  for (const tournament of tournaments) {
+    try {
+      // 使用「名稱 + 開始日期」作為唯一鍵值
+      const eventKey = `${tournament.name}|${formatDate(tournament.dateStart)}`;
+      processedEventKeys.add(eventKey);
+
+      const existingEvent = existingEventsMap.get(eventKey);
+
+      const eventData = {
+        summary: tournament.name,
+        location: formatLocation(tournament.location),
+        description: tournament.description,
+        start: {
+          date: formatDate(tournament.dateStart),
+          timeZone: 'UTC'
+        },
+        end: {
+          date: formatDate(tournament.dateEnd, true),
+          timeZone: 'UTC'
+        },
+        transparency: 'transparent',
+        visibility: 'public',
+        source: {
+          title: `${getSourceName(sportId)} Calendar`,
+          url: tournament.url || ''
+        }
+      };
+
+      if (!existingEvent) {
+        // 事件不存在，建立新事件
+        await calendar.events.insert({
+          calendarId,
+          requestBody: eventData
+        });
+        console.log(`✅ Created: ${tournament.name}`);
+        createdCount++;
+      } else {
+        // 事件已存在，檢查是否需要更新
+        if (needsUpdate(existingEvent, eventData)) {
+          await calendar.events.update({
+            calendarId,
+            eventId: existingEvent.id,
+            requestBody: eventData
+          });
+          console.log(`🔄 Updated: ${tournament.name}`);
+          updatedCount++;
+        } else {
+          console.log(`⏭️  Unchanged: ${tournament.name}`);
+          unchangedCount++;
+        }
+      }
+    } catch (error) {
+      console.error(`❌ Error processing ${tournament.name}:`, error.message);
+    }
+  }
+
+  // 刪除不再存在的事件
+  let deletedCount = 0;
+  for (const [key, event] of existingEventsMap.entries()) {
+    if (!processedEventKeys.has(key)) {
+      try {
+        await calendar.events.delete({
+          calendarId,
+          eventId: event.id
+        });
+        console.log(`🗑️  Deleted: ${event.summary}`);
+        deletedCount++;
+      } catch (error) {
+        console.error(`❌ Error deleting ${event.summary}:`, error.message);
+      }
+    }
+  }
+
+  console.log(`\n📊 Sync Summary for ${sportId}:`);
+  console.log(`   Created: ${createdCount}`);
+  console.log(`   Updated: ${updatedCount}`);
+  console.log(`   Unchanged: ${unchangedCount}`);
+  console.log(`   Deleted: ${deletedCount}`);
+  console.log(`   Total processed: ${tournaments.length}\n`);
 }
 
 /**
- * 格式化日期為 YYYY-MM-DD 格式
+ * 檢查事件是否需要更新
+ * @param {Object} existingEvent - 現有的日曆事件
+ * @param {Object} newEventData - 新的事件資料
+ * @returns {boolean} 是否需要更新
+ */
+function needsUpdate(existingEvent, newEventData) {
+  // 比對所有重要欄位
+  const checks = [
+    existingEvent.summary !== newEventData.summary,
+    existingEvent.location !== newEventData.location,
+    existingEvent.description !== newEventData.description,
+    existingEvent.start?.date !== newEventData.start?.date,
+    existingEvent.start?.dateTime !== newEventData.start?.dateTime,
+    existingEvent.end?.date !== newEventData.end?.date,
+    existingEvent.end?.dateTime !== newEventData.end?.dateTime,
+    existingEvent.source?.url !== newEventData.source?.url,
+    existingEvent.transparency !== newEventData.transparency,
+    existingEvent.visibility !== newEventData.visibility
+  ];
+
+  return checks.some(check => check === true);
+}
+
+/**
+ * 格式化日期為 YYYY-MM-DD 格式（UTC 時區）
  * @param {string} dateString - ISO 日期字符串
- * @param {boolean} addDay - 是否加一天
+ * @param {boolean} isEndDate - 是否為結束日期（Google Calendar 結束日期需要加一天）
  * @returns {string} 格式化的日期
  */
-function formatDate(dateString, addDay = false) {
-  const date = new Date(dateString);
-  
-  if (addDay) {
-    date.setDate(date.getDate() + 1);
+function formatDate(dateString, isEndDate = false) {
+  // 使用 UTC 時間避免時區問題
+  // 直接取 ISO 字串的日期部分 (YYYY-MM-DD)
+  let dateStr = dateString.split('T')[0];
+
+  // Google Calendar 的全天事件結束日期需要是「隔天」
+  // 例如：11/17-11/21 的事件，end.date 要設為 11/22
+  if (isEndDate) {
+    const date = new Date(dateStr + 'T00:00:00Z'); // 明確使用 UTC
+    date.setUTCDate(date.getUTCDate() + 1);
+    dateStr = date.toISOString().split('T')[0];
   }
-  
-  return date.toISOString().split('T')[0];
+
+  return dateStr;
 }
 
 /**

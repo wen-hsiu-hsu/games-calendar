@@ -312,17 +312,55 @@ interface Tournament {
 - 將服務帳戶加入日曆共享
 ```
 
-### 重複事件防止
+### 智慧事件同步機制
 
-建立事件前查詢相同條件的事件：
+每次執行時會完整驗證所有事件，確保日曆與 API 資料同步：
+
+#### 同步策略
 
 ```javascript
-// 查詢條件
-- 事件標題 (summary)
-- 時間範圍 (timeMin, timeMax)
-
-// 若存在則跳過，避免重複建立
+1. 獲取日曆上所有現有事件（未來一年）
+2. 建立事件映射表（key: name|startDate|endDate）
+3. 對每個 API 賽事：
+   ├─ 事件不存在 → 建立新事件
+   ├─ 事件已存在但資料不同 → 更新事件
+   └─ 事件已存在且資料相同 → 跳過
+4. 刪除日曆上已不存在於 API 的事件
 ```
+
+#### 驗證欄位
+
+系統會驗證以下所有欄位的變更：
+
+```javascript
+- summary (賽事名稱)
+- location (地點)
+- description (描述)
+- start.date / start.dateTime (開始時間)
+- end.date / end.dateTime (結束時間)
+- source.url (官方連結)
+- transparency (透明度)
+- visibility (可見性)
+```
+
+#### 執行結果
+
+每次同步會顯示詳細摘要：
+
+```
+📊 Sync Summary for bwf:
+   Created: 38      # 新建立的事件
+   Updated: 2       # 資料有變更，已更新
+   Unchanged: 2     # 資料完全相同，未變更
+   Deleted: 2       # API 已移除，從日曆刪除
+   Total processed: 42
+```
+
+這確保了：
+- ✅ 時間錯誤會自動修正
+- ✅ 地點、描述等資訊變更會同步
+- ✅ 過時的賽事會被移除
+- ✅ 避免重複建立相同事件
 
 ---
 

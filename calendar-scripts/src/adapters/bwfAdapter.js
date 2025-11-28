@@ -95,8 +95,8 @@ export class BwfAdapter {
             country: tournament.country || '',
             venue: tournament.location || ''
           },
-          dateStart: tournament.start_date ? new Date(tournament.start_date).toISOString() : null,
-          dateEnd: tournament.end_date ? new Date(tournament.end_date).toISOString() : null,
+          dateStart: tournament.start_date ? this._parseDate(tournament.start_date) : null,
+          dateEnd: tournament.end_date ? this._parseDate(tournament.end_date) : null,
           category: tournament.category || 'BWF Tournament',
           level: this._extractLevel(tournament.category),
           prize: tournament.prize_money || '',
@@ -115,6 +115,25 @@ export class BwfAdapter {
 
     console.log(`Standardized ${standardizedTournaments.length} tournaments from official API format`);
     return standardizedTournaments;
+  }
+
+  /**
+   * 解析日期字串為 ISO 格式（避免時區問題）
+   * BWF API 返回格式: "2025-12-17 00:00:00"
+   * @param {string} dateString - 日期字串
+   * @returns {string} ISO 8601 格式日期字串
+   * @private
+   */
+  _parseDate(dateString) {
+    if (!dateString) return null;
+
+    // BWF API 格式: "2025-12-17 00:00:00"
+    // 提取日期部分 "2025-12-17"
+    const datePart = dateString.split(' ')[0];
+
+    // 將日期視為 UTC 時間，避免本地時區影響
+    // 格式: "2025-12-17T00:00:00.000Z"
+    return `${datePart}T00:00:00.000Z`;
   }
 
   /**
