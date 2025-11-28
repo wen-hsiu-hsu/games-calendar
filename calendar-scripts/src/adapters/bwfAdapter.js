@@ -1,38 +1,66 @@
 /**
  * BWF (羽毛球世界聯合會) 比賽數據適配器
- * 將 BWF API 格式轉換為標準化的比賽數據格式
+ * 將 BWF 官方 API 格式轉換為標準化的比賽數據格式
+ *
+ * 資料格式：
+ * {
+ *   results: [
+ *     {
+ *       month: "January",
+ *       monthNo: 1,
+ *       tournaments: [
+ *         {
+ *           name: "...",
+ *           start_date: "2025-01-07 00:00:00",
+ *           end_date: "2025-01-12 00:00:00",
+ *           location: "Kuala Lumpur, Malaysia",
+ *           country: "Malaysia",
+ *           prize_money: "1,450,000",
+ *           category: "HSBC BWF World Tour Super 1000",
+ *           url: "https://...",
+ *           ...
+ *         }
+ *       ]
+ *     }
+ *   ]
+ * }
  */
 export class BwfAdapter {
   /**
    * 將 BWF 比賽數據標準化
-   * @param {Object} data - 從 BWF API 獲取的原始數據
+   * @param {Object} data - 從 BWF 官方 API 獲取的原始數據
    * @returns {Array} 標準化的比賽數據數組
    */
   standardize(data) {
-    console.log('BWF Adapter received data:', JSON.stringify(data).substring(0, 200) + '...');
-    
+    console.log('BWF Adapter received data structure:', Object.keys(data || {}).join(', '));
+
     // 檢查數據是否為空或無效
     if (!data) {
       console.warn('Received empty data in BWF adapter');
       return [];
     }
-    
+
     try {
-      // 處理 BWF API 特定格式: {results: {January: {...}, February: {...}, ...}}
-      if (data.results) {
-        console.log('Processing BWF data in results format with months');
+      // 處理官方 API 格式: {results: [{month: "January", tournaments: [...]}]}
+      if (data.results && Array.isArray(data.results)) {
+        console.log(`Processing BWF official API format with ${data.results.length} months`);
+        return this._processOfficialApiFormat(data.results);
+      }
+      // 處理舊格式 (向後兼容): {results: {January: {...}, February: {...}, ...}}
+      else if (data.results && typeof data.results === 'object') {
+        console.log('Processing BWF legacy format with monthly objects');
         return this._processMonthlyResults(data.results);
-      } 
+      }
       // 處理 tournaments 數組格式
       else if (data.tournaments && Array.isArray(data.tournaments)) {
         console.log('Processing BWF data in tournaments array format');
         return this._processTournamentsArray(data.tournaments);
-      } 
+      }
       // 處理純數組格式
       else if (Array.isArray(data)) {
         console.log('Processing BWF data as direct array');
         return this._processTournamentsArray(data);
-      } 
+      }
       // 未知格式
       else {
         console.warn('Unrecognized BWF data format:', Object.keys(data).join(', '));
@@ -42,6 +70,123 @@ export class BwfAdapter {
       console.error('Error standardizing BWF tournament data:', error);
       return [];
     }
+  }
+
+  /**
+   * 處理官方 API 格式 (results 是陣列)
+   * @param {Array} results - 月份陣列，每個月份包含 tournaments
+   * @returns {Array} 標準化的比賽數據數組
+   * @private
+   */
+  _processOfficialApiFormat(results) {
+    const standardizedTournaments = [];
+
+    for (const monthData of results) {
+      if (!monthData.tournaments || !Array.isArray(monthData.tournaments)) {
+        continue;
+      }
+
+      for (const tournament of monthData.tournaments) {
+        const standardTournament = {
+          id: `bwf-${tournament.id || Date.now()}-${tournament.code || Math.random().toString(36).substr(2, 5)}`,
+          name: tournament.name || 'Unnamed Tournament',
+          location: {
+            city: this._extractCity(tournament.location),
+            country: tournament.country || '',
+            venue: tournament.location || ''
+          },
+          dateStart: tournament.start_date ? new Date(tournament.start_date).toISOString() : null,
+          dateEnd: tournament.end_date ? new Date(tournament.end_date).toISOString() : null,
+          category: tournament.category || 'BWF Tournament',
+          level: this._extractLevel(tournament.category),
+          prize: tournament.prize_money || '',
+          url: tournament.url || '',
+          description: this._generateOfficialDescription(tournament),
+          source: 'BWF',
+          lastUpdated: new Date().toISOString()
+        };
+
+        // 只添加有開始和結束日期的比賽
+        if (standardTournament.dateStart && standardTournament.dateEnd) {
+          standardizedTournaments.push(standardTournament);
+        }
+      }
+    }
+
+    console.log(`Standardized ${standardizedTournaments.length} tournaments from official API format`);
+    return standardizedTournaments;
+  }
+
+  /**
+   * 從 location 字串中提取城市名稱
+   * 例如: "Kuala Lumpur, Malaysia" -> "Kuala Lumpur"
+   * @param {string} location - 位置字串
+   * @returns {string} 城市名稱
+   * @private
+   */
+  _extractCity(location) {
+    if (!location) return '';
+    const parts = location.split(',');
+    return parts[0]?.trim() || '';
+  }
+
+  /**
+   * 從 category 中提取賽事等級
+   * 例如: "HSBC BWF World Tour Super 1000" -> "Super 1000"
+   * @param {string} category - 賽事分類
+   * @returns {string} 賽事等級
+   * @private
+   */
+  _extractLevel(category) {
+    if (!category) return '';
+
+    const levelMatch = category.match(/Super \d+/i);
+    if (levelMatch) {
+      return levelMatch[0];
+    }
+
+    if (category.includes('World Championships')) return 'World Championships';
+    if (category.includes('Grand Prix')) return 'Grand Prix';
+
+    return '';
+  }
+
+  /**
+   * 為官方 API 格式生成描述
+   * @param {Object} tournament - 賽事資料
+   * @returns {string} 描述文字
+   * @private
+   */
+  _generateOfficialDescription(tournament) {
+    let description = '';
+
+    if (tournament.name) {
+      description += `${tournament.name}\n\n`;
+    }
+
+    if (tournament.category) {
+      description += `${tournament.category}\n`;
+    }
+
+    if (tournament.prize_money) {
+      description += `Prize Money: $${tournament.prize_money}\n`;
+    }
+
+    if (tournament.location) {
+      description += `Location: ${tournament.location}\n`;
+    }
+
+    if (tournament.date) {
+      description += `Date: ${tournament.date}\n`;
+    }
+
+    if (tournament.url) {
+      description += `\nMore info: ${tournament.url}\n`;
+    }
+
+    description += `\nSource: BWF Official API`;
+
+    return description;
   }
   
   /**

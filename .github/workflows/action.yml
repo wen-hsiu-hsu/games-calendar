@@ -18,16 +18,35 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '22'
           cache: 'npm'
+
+      - name: Install system dependencies for Puppeteer
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libnss3 \
+            libatk1.0-0 \
+            libatk-bridge2.0-0 \
+            libcups2 \
+            libdrm2 \
+            libxkbcommon0 \
+            libxcomposite1 \
+            libxdamage1 \
+            libxfixes3 \
+            libxrandr2 \
+            libgbm1 \
+            libasound2
 
       - name: Install dependencies
         run: npm ci
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: false
 
       - name: Set up credentials
         run: |
@@ -36,9 +55,9 @@ jobs:
       - name: Create calendars
         run: |
           if [ -n "${{ inputs.sports }}" ]; then
-            node src/index.js ${{ inputs.sports }}
+            node calendar-scripts/src/index.js ${{ inputs.sports }}
           else
-            node src/index.js
+            node calendar-scripts/src/index.js
           fi
         env:
           GOOGLE_CALENDAR_CREDENTIALS: credentials.json
