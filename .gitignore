@@ -33,3 +33,6 @@ Thumbs.db
 fake-data-*
 credentials.json
 token.json
+
+# Sync state (不應提交到版本控制)
+calendar-scripts/data/sync-state.json

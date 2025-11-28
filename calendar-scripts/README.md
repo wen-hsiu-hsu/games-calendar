@@ -8,6 +8,7 @@
 
 - **[架構說明](docs/ARCHITECTURE.md)** - 系統架構設計、設計模式、資料流程
 - **[開發指南](docs/DEVELOPMENT.md)** - 環境設定、開發流程、測試方法
+- **[資料儲存與同步](docs/DATA_STORAGE.md)** - 本地儲存架構、sync-state 管理、hash 比對機制
 
 ### 🏅 運動專屬文件
 

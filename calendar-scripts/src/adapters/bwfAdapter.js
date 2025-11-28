@@ -32,8 +32,6 @@ export class BwfAdapter {
    * @returns {Array} 標準化的比賽數據數組
    */
   standardize(data) {
-    console.log('BWF Adapter received data structure:', Object.keys(data || {}).join(', '));
-
     // 檢查數據是否為空或無效
     if (!data) {
       console.warn('Received empty data in BWF adapter');
@@ -41,8 +39,14 @@ export class BwfAdapter {
     }
 
     try {
+      // 【新格式】處理從 storageManager 載入的本地資料格式
+      // 這些資料已經包含標準化欄位和 rawData
+      if (Array.isArray(data) && data.length > 0 && data[0].rawData) {
+        console.log(`Processing BWF local storage format with ${data.length} events`);
+        return this._processLocalStorageFormat(data);
+      }
       // 處理官方 API 格式: {results: [{month: "January", tournaments: [...]}]}
-      if (data.results && Array.isArray(data.results)) {
+      else if (data.results && Array.isArray(data.results)) {
         console.log(`Processing BWF official API format with ${data.results.length} months`);
         return this._processOfficialApiFormat(data.results);
       }
@@ -63,13 +67,53 @@ export class BwfAdapter {
       }
       // 未知格式
       else {
-        console.warn('Unrecognized BWF data format:', Object.keys(data).join(', '));
+        console.warn('Unrecognized BWF data format');
         return [];
       }
     } catch (error) {
       console.error('Error standardizing BWF tournament data:', error);
       return [];
     }
+  }
+
+  /**
+   * 處理從 storageManager 載入的本地資料格式
+   * 這些資料已經包含標準化欄位和 rawData,直接使用即可
+   * @param {Array} localData - 本地儲存的資料陣列
+   * @returns {Array} 標準化的比賽數據數組
+   * @private
+   */
+  _processLocalStorageFormat(localData) {
+    const standardizedTournaments = [];
+
+    for (const item of localData) {
+      // 資料已經標準化,只需要確保格式一致並保留 rawData
+      const tournament = {
+        id: item.id,
+        name: item.name,
+        location: item.location,
+        dateStart: item.dateStart,
+        dateEnd: item.dateEnd,
+        category: item.category,
+        level: item.level,
+        prize: item.prize,
+        url: item.url,
+        description: item.rawData ? this._generateOfficialDescription(item.rawData) : '',
+        source: 'BWF',
+        lastUpdated: new Date().toISOString(),
+
+        // 保留原始資料參考
+        rawData: item.rawData
+      };
+
+      // 只添加有開始和結束日期的比賽
+      if (tournament.dateStart && tournament.dateEnd) {
+        standardizedTournaments.push(tournament);
+      }
+    }
+
+    console.log(`Standardized ${standardizedTournaments.length} tournaments from local storage format`);
+    return standardizedTournaments;
   }
 
   /**

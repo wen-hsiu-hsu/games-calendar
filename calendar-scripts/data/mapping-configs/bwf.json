@@ -1,0 +1,43 @@
+{
+  "version": "1.0",
+  "apiVersion": "vue-grouped-year-tournaments-v1",
+  "description": "BWF Official API field mapping configuration",
+
+  "fields": {
+    "id": "$.id",
+    "name": "$.name",
+    "dateStart": "$.start_date",
+    "dateEnd": "$.end_date",
+    "location": {
+      "city": "$.location",
+      "country": "$.country",
+      "venue": "$.location"
+    },
+    "category": "$.category",
+    "prize": "$.prize_money",
+    "url": "$.url"
+  },
+
+  "transformations": {
+    "dateFormat": "YYYY-MM-DD HH:mm:ss",
+
+    "extractCity": {
+      "from": "$.location",
+      "method": "regex",
+      "pattern": "^([^,]+)",
+      "group": 1
+    },
+
+    "extractLevel": {
+      "from": "$.category",
+      "method": "regex",
+      "pattern": "(Super \\d+|World Championships|Grand Prix)",
+      "group": 1
+    }
+  },
+
+  "validation": {
+    "required": ["id", "name", "dateStart", "dateEnd"],
+    "dateFields": ["dateStart", "dateEnd"]
+  }
+}

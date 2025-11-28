@@ -52,14 +52,18 @@ npm run preview
 
 **簡要概述**:
 ```
-API Index → API Client → Adapter Factory → Sport-specific Adapter → Data Processor → Calendar Service → Google Calendar
+階段 1: API Client → Storage Manager → 儲存到 public/data/{sport}/{year}.json
+階段 2: 載入本地資料 → Adapter → 標準化
+階段 3: Sync Service → Hash 比對 → CREATE/UPDATE/DELETE → 更新 sync-state
 ```
 
 核心設計模式：
 - **Adapter Pattern**: 統一處理不同 API 的資料格式
 - **Factory Pattern**: 動態載入對應運動的適配器
 - **Service Account Auth**: 使用 Google 服務帳戶進行無頭環境認證
-- **Duplicate Prevention**: 建立事件前查詢相同名稱與日期範圍的事件
+- **Local Storage**: 爬取的資料儲存為本地 JSON 檔案,前端可直接讀取
+- **Sync State Management**: 使用 sync-state.json 追蹤同步狀態
+- **Hash-based Sync**: 使用 hash 比對機制,避免不必要的 API 呼叫
 
 ### Frontend Structure
 - **路徑別名**: `@/` 對應到 `frontend/src/`
